@@ -28,6 +28,14 @@ module AtlassianJwtAuthentication
       @jwt_user = jwt_user
     end
 
+    def jwt_token_meta_tag
+      tag("meta", name: "jwt-token", content: response.headers['x-acpt'])
+    end
+
+    def host_base_url_meta_tag
+      tag("meta", name: "host-base-url", content: params[:xdm_e])
+    end
+
     def rest_api_url(method, endpoint)
       unless current_jwt_auth
         raise 'Missing Authentication context'
