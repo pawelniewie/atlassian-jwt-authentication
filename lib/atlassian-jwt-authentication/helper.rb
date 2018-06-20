@@ -32,6 +32,14 @@ module AtlassianJwtAuthentication
       AtlassianJwtAuthentication::UserBearerToken::user_bearer_token(current_jwt_auth, user_key, scopes)
     end
 
+    def jwt_token_meta_tag
+      tag("meta", name: "jwt-token", content: response.headers['x-acpt'])
+    end
+
+    def host_base_url_meta_tag
+      tag("meta", name: "host-base-url", content: params[:xdm_e])
+    end
+
     def rest_api_url(method, endpoint)
       unless current_jwt_auth
         raise 'Missing Authentication context'

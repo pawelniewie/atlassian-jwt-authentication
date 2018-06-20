@@ -245,6 +245,17 @@ module AtlassianJwtAuthentication
         self.current_jwt_user = current_jwt_auth.jwt_users.where(user_key: params[:user_uuid]).first
       end
 
+      issued_at = Time.now.utc
+      token_age = respond_to?(:max_token_age) ? max_token_age : 10.minutes
+      client_token = JWT.encode({
+        iss: current_jwt_auth.addon_key,
+        sub: payload['sub'],
+        iat: issued_at.to_i,
+        exp: (issued_at + token_age).to_i,
+        aud: [current_jwt_auth.client_key]
+      }, current_jwt_auth.shared_secret)
+      response.set_header('x-acpt', client_token)
+
       true
     end
 
