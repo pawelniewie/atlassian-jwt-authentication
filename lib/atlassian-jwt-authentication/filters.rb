@@ -141,130 +141,16 @@ module AtlassianJwtAuthentication
         jwt = nil unless algorithm == 'JWT'
       end
 
-      unless jwt.present? && addon_key.present?
+      jwt_auth, jwt_user, client_token = AtlassianJwtAuthentication::Verify.verify_jwt(addon_key, jwt, request, exclude_qsh_params)
+
+      if !jwt_auth
         head(:unauthorized)
         return false
-      end
-
-      # Decode the JWT parameter without verification
-      verify_expiration = ENV.fetch('JWT_VERIFY_EXPIRATION', 'true') != 'false'
-
-      decoded = JWT.decode(jwt, nil, false, {verify_expiration: verify_expiration})
-
-      # Extract the data
-      data = decoded[0]
-      encoding_data = decoded[1]
-
-      # Find a matching JWT token in the DB
-      client_key = data['iss']
-
-      # The audience claim identifies the intended recipient, according to the JWT spec,
-      # but we still allow the issuer to be used if 'aud' is missing.
-      # Session JWTs make use of this (the issuer is the add-on in this case)
-      if data['aud'] && data['aud'].size > 0
-        client_key = data['aud'][0]
-      end
-
-      jwt_auth = JwtToken.where(
-          client_key: client_key,
-          addon_key: addon_key
-      ).first
-
-      unless jwt_auth
-        head(:unauthorized)
-        return false
-      end
-
-      # Discard tokens without verification
-      if encoding_data['alg'] == 'none'
-        head(:unauthorized)
-        return false
-      end
-
-      # Verify the signature with the sharedSecret and the algorithm specified in the header's alg field
-      # The JWT gem has changed the way you can access the decoded segments in v 1.5.5, we just handle both.
-      if JWT.const_defined?(:Decode)
-        options = {
-            verify_expiration: verify_expiration,
-            verify_not_before: true,
-            verify_iss: false,
-            verify_iat: false,
-            verify_jti: false,
-            verify_aud: false,
-            verify_sub: false,
-            leeway: 0
-        }
-        decoder = JWT::Decode.new(jwt, nil, true, options)
-        header, payload, signature, signing_input = decoder.decode_segments
-      else
-        header, payload, signature, signing_input = JWT.decoded_segments(jwt)
-      end
-
-      unless header && payload
-        head(:unauthorized)
-        return false
-      end
-
-      # Now verify the signature with the proper algorithm
-      begin
-        JWT.verify_signature(encoding_data['alg'], jwt_auth.shared_secret, signing_input, signature)
-      rescue Exception => e
-        head(:unauthorized)
-        return false
-      end
-
-      if data['qsh']
-        # Verify the query has not been tampered by Creating a Query Hash and
-        # comparing it against the qsh claim on the verified token
-        if jwt_auth.base_url.present? && request.url.include?(jwt_auth.base_url)
-          path = request.url.gsub(jwt_auth.base_url, '')
-        else
-          path = request.path.gsub(context_path, '')
-        end
-        path = '/' if path.empty?
-
-        qsh_parameters = request.query_parameters.
-            except(:jwt)
-
-        exclude_qsh_params.each { |param_name| qsh_parameters = qsh_parameters.except(param_name) }
-
-        qsh = request.method.upcase + '&' + path + '&' +
-            qsh_parameters.
-                sort.
-                map{ |param_pair| ERB::Util.url_encode(param_pair[0]) + '=' + ERB::Util.url_encode(param_pair[1]) }.join('&')
-        qsh = Digest::SHA256.hexdigest(qsh)
-
-        unless data['qsh'] == qsh
-          head(:unauthorized)
-          return
-        end
       end
 
       self.current_jwt_auth = jwt_auth
+      self.current_jwt_user = jwt_user
 
-      # In the case of Confluence and Jira we receive user information inside the JWT token
-      if data['context'] && data['context']['user']
-        # Has this user accessed our add-on before?
-        # If not, create a new JwtUser
-
-        self.current_jwt_user = current_jwt_auth.jwt_users.where(user_key: data['context']['user']['userKey']).first
-        self.current_jwt_user = JwtUser.create(jwt_token_id: current_jwt_auth.id,
-                                               user_key: data['context']['user']['userKey'],
-                                               name: data['context']['user']['username'],
-                                               display_name: data['context']['user']['displayName']) unless current_jwt_user
-      elsif params[:user_uuid]
-        self.current_jwt_user = current_jwt_auth.jwt_users.where(user_key: params[:user_uuid]).first
-      end
-
-      issued_at = Time.now.utc
-      token_age = respond_to?(:max_token_age) ? max_token_age : 10.minutes
-      client_token = JWT.encode({
-        iss: current_jwt_auth.addon_key,
-        sub: payload['sub'],
-        iat: issued_at.to_i,
-        exp: (issued_at + token_age).to_i,
-        aud: [current_jwt_auth.client_key]
-      }, current_jwt_auth.shared_secret)
       response.set_header('x-acpt', client_token)
 
       true
