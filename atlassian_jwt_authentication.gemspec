@@ -21,7 +21,7 @@ Gem::Specification.new do |s|
   s.add_dependency('addressable', '>= 2.4.0')
   s.add_dependency('httparty', '>= 0.13')
   s.add_dependency('i18n', '~> 1.0.1')
-  s.add_dependency('jwt', '~> 1.5')
+  s.add_dependency('jwt', '~> 2.1.0')
 
   s.add_development_dependency('activerecord', '>= 4.1.0')
   s.add_development_dependency('bundler')
