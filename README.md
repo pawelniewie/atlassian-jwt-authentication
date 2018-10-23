@@ -15,8 +15,7 @@ Or, if you're using Bundler, just add the following to your Gemfile:
 
 ```ruby
 gem 'atlassian-jwt-authentication', 
-  git: 'https://github.com/MeisterLabs/atlassian-jwt-authentication.git', 
-  require: 'atlassian_jwt_authentication'
+  git: 'https://github.com/MeisterLabs/atlassian-jwt-authentication.git'
 ```
 
 ## Usage
@@ -44,11 +43,6 @@ Don't forget to run your migrations now!
 The gem provides 2 endpoints for an Atlassian add-on lifecycle, installed and uninstalled. 
 For more information on the available Atlassian lifecycle callbacks visit 
 https://developer.atlassian.com/static/connect/docs/latest/modules/lifecycle.html.
-
-First, require the gem in one of your initializers:
-```ruby
-require 'atlassian_jwt_authentication'
-```
 
 If your add-on baseUrl is not your application root URL then include the following 
 configuration for the context path. This is needed in the query hash string validation 
@@ -241,14 +235,29 @@ Ruby 2.0+, ActiveRecord 4.1+
 
 ### Message Bus
 
+In `application.rb` register our middleware:
+
+```ruby
+config.middleware.insert_after ActionDispatch::Session::CookieStore, AtlassianJwtAuthentication::Middleware::VerifyJwtToken, 'plugin_key'
+```
+
 With middleware enabled you can use following configuration to limit access to message bus per user / instance:
 ```ruby
 MessageBus.user_id_lookup do |env|
-  env.try(:[], 'atlassian_jwt_authentication.jwt_user').try(:id)
+  # We switched to user_key because they are available in all web requests from connect, user_id is sth you need to take from Jira via api
+  env.try(:[], 'atlassian_jwt_authentication.jwt_user').try(:user_key)
 end
 
 MessageBus.site_id_lookup do |env|
   env.try(:[], 'atlassian_jwt_authentication.jwt_token').try(:id)
+end
+
+MessageBus.extra_response_headers_lookup do |env|
+  {}.tap do |headers|
+    if env['atlassian_jwt_authentication.client_token']
+      headers['x-acpt'] = env['atlassian_jwt_authentication.client_token']
+    end
+  end
 end
 ```
 
